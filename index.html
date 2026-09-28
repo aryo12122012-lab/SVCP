@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SVCP - برنامه تماس صوتی</title>
+    <!-- فونت وزیر متن -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <!-- کتابخانه PeerJS برای ارتباط P2P -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+    <style>
+        :root {
+            --primary: #ff7b00;
+            --primary-light: #ffa048;
+            --primary-dark: #cc6200;
+            --bg-gradient: linear-gradient(135deg, #ff7b00 0%, #ffae58 50%, #ffd8a8 100%);
+            --glass-bg: rgba(255, 255, 255, 0.25);
+            --glass-border: rgba(255, 255, 255, 0.4);
+            --glass-shadow: 0 8px 32px 0 rgba(230, 90, 0, 0.25);
+            --text-color: #2c1a04;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Vazirmatn', sans-serif;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: var(--bg-gradient);
+            color: var(--text-color);
+        }
+
+        /* --- Splash Screen (انیمیشن شروع) --- */
+        #splash-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #ffffff;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.8s ease, visibility 0.8s;
+        }
+
+        .splash-logo {
+            font-size: clamp(2rem, 8vw, 3.5rem);
+            font-weight: 800;
+            color: var(--primary);
+            animation: pulseZoom 2s ease-in-out infinite alternate;
+            text-align: center;
+        }
+
+        .splash-sub {
+            font-size: clamp(1rem, 4vw, 1.5rem);
+            color: #666;
+            margin-top: 10px;
+            opacity: 0;
+            animation: fadeIn 1.5s ease forwards 0.5s;
+        }
+
+        @keyframes pulseZoom {
+            0% { transform: scale(0.9); opacity: 0.8; }
+            100% { transform: scale(1.08); opacity: 1; }
+        }
+
+        @keyframes fadeIn {
+            to { opacity: 1; }
+        }
+
+        /* --- استایل کلی لیکویید گلسی --- */
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 28px;
+            box-shadow: var(--glass-shadow);
+        }
+
+        .glass-btn {
+            background: rgba(255, 255, 255, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border-radius: 50px;
+            color: #ffffff;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            outline: none;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+
+        .glass-btn:active {
+            transform: scale(0.95);
+            background: rgba(255, 255, 255, 0.6);
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            border: none;
+            color: white;
+            box-shadow: 0 4px 15px rgba(255, 123, 0, 0.4);
+        }
+
+        .btn-danger {
+            background: #ff3b30;
+            border: none;
+            color: white;
+            box-shadow: 0 4px 15px rgba(255, 59, 48, 0.4);
+        }
+
+        /* --- چیدمان اصلی برنامه (App Container) --- */
+        .app-container {
+            width: 100%;
+            height: 100%;
+            padding: clamp(15px, 3vh, 30px);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        /* هدر */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 25px;
+            width: 100%;
+        }
+
+        .brand {
+            font-size: clamp(1.4rem, 5vw, 2rem);
+            font-weight: 800;
+            color: white;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .my-id-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.5);
+            padding: 6px 16px;
+            border-radius: 50px;
+            font-size: clamp(0.85rem, 3vw, 1.1rem);
+            font-weight: 600;
+        }
+
+        .id-badge {
+            background: var(--primary);
+            color: white;
+            padding: 2px 10px;
+            border-radius: 20px;
+            letter-spacing: 1px;
+            font-family: monospace;
+            font-size: 1.1em;
+        }
+
+        /* بخش اصلی محتوا */
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* پاسخگویی هوشمند به جهت صفحه (Responsive Layout) */
+        @media (min-width: 600px) and (orientation: landscape) {
+            main {
+                flex-direction: row;
+            }
+            .section-call, .section-status {
+                flex: 1;
+            }
+        }
+
+        .card {
+            padding: clamp(20px, 4vw, 35px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            text-align: center;
+            flex: 1;
+        }
+
+        .input-group {
+            width: 100%;
+            max-width: 320px;
+            position: relative;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 16px 20px;
+            border-radius: 50px;
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            background: rgba(255, 255, 255, 0.4);
+            backdrop-filter: blur(10px);
+            outline: none;
+            font-size: clamp(1rem, 4vw, 1.2rem);
+            text-align: center;
+            color: #333;
+            transition: all 0.3s ease;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--primary);
+            background: rgba(255, 255, 255, 0.7);
+        }
+
+        .call-btn {
+            width: 100%;
+            max-width: 320px;
+            height: clamp(50px, 8vh, 65px);
+            font-size: clamp(1.1rem, 4vw, 1.3rem);
+        }
+
+        /* وضعیت تماس */
+        .status-text {
+            font-size: clamp(1rem, 3.5vw, 1.3rem);
+            font-weight: 600;
+            color: #fff;
+            text-shadow: 0 1px 5px rgba(0,0,0,0.1);
+        }
+
+        .avatar {
+            width: clamp(80px, 18vw, 120px);
+            height: clamp(80px, 18vw, 120px);
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid white;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+
+        .avatar svg {
+            width: 50%;
+            height: 50%;
+            fill: white;
+        }
+
+        .pulse-animation {
+            animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 20px rgba(255, 255, 255, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+        }
+
+        /* کنترل‌های تماس */
+        .call-controls {
+            display: flex;
+            gap: 15px;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .control-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- صفحه اسپلاش اسکرین -->
+    <div id="splash-screen">
+        <div class="splash-logo">آریو کمپانی</div>
+        <div class="splash-sub">SVCP Voice Call</div>
+    </div>
+
+    <!-- برنامه اصلی -->
+    <div class="app-container">
+        <!-- هدر -->
+        <header class="glass-panel">
+            <div class="brand">SVCP</div>
+            <div class="my-id-container">
+                <span>آیدی شما:</span>
+                <span id="my-id" class="id-badge">...</span>
+            </div>
+        </header>
+
+        <!-- بخش اصلی -->
+        <main>
+            <!-- بخش شماره‌گیری -->
+            <div class="card glass-panel section-call" id="dial-section">
+                <div class="avatar">
+                    <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                </div>
+                <div class="input-group">
+                    <input type="text" id="peer-id-input" placeholder="آیدی مخاطب را وارد کنید" maxlength="5" autocomplete="off">
+                </div>
+                <button class="glass-btn btn-primary call-btn" id="call-btn">برقراری تماس</button>
+            </div>
+
+            <!-- بخش نمایش وضعیت و کنترل تماس -->
+            <div class="card glass-panel section-status hidden" id="active-call-section">
+                <div class="avatar" id="call-avatar">
+                    <svg viewBox="0 0 24 24"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+                </div>
+                <div class="status-text" id="call-status">در حال برقراری ارتباط...</div>
+                
+                <div class="call-controls">
+                    <!-- دکمه پاسخ (در حالت دریافت تماس) -->
+                    <button class="glass-btn btn-primary control-btn hidden" id="answer-btn">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+                    </button>
+                    <!-- دکمه قطع تماس -->
+                    <button class="glass-btn btn-danger control-btn" id="hangup-btn">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08c-.18-.17-.29-.42-.29-.7 0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.69-1.36-2.67-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg>
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- تگ صوتی مخفی برای پخش صدای مخاطب -->
+    <audio id="remote-audio" autoplay></audio>
+
+    <script>
+        // --- 1. مدیریت اسپلاش اسکرین ---
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                const splash = document.getElementById('splash-screen');
+                splash.style.opacity = '0';
+                setTimeout(() => splash.style.visibility = 'hidden', 800);
+            }, 2000);
+        });
+
+        // --- 2. مدیریت آیدی و ذخیره‌سازی ---
+        function generateShortId() {
+            const chars = '23456789abcdefghjkmnpqrstuvwxyz';
+            let result = '';
+            for (let i = 0; i < 5; i++) {
+                result += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return result;
+        }
+
+        let myUserId = localStorage.getItem('svcp_user_id');
+        if (!myUserId) {
+            myUserId = generateShortId();
+            localStorage.setItem('svcp_user_id', myUserId);
+        }
+        document.getElementById('my-id').innerText = myUserId;
+
+        // --- 3. منطق WebRTC و PeerJS ---
+        let peer = null;
+        let activeCall = null;
+        let localStream = null;
+
+        const dialSection = document.getElementById('dial-section');
+        const activeCallSection = document.getElementById('active-call-section');
+        const callStatus = document.getElementById('call-status');
+        const callAvatar = document.getElementById('call-avatar');
+        const answerBtn = document.getElementById('answer-btn');
+        const peerIdInput = document.getElementById('peer-id-input');
+        const remoteAudio = document.getElementById('remote-audio');
+
+        // راه اندازی ساختار Peer
+        function initPeer() {
+            peer = new Peer(myUserId, {
+                debug: 1
+            });
+
+            peer.on('open', (id) => {
+                console.log('ارتباط با سرور برقرار شد. آیدی:', id);
+            });
+
+            // دریافت تماس ورودی
+            peer.on('call', (incomingCall) => {
+                activeCall = incomingCall;
+                showCallUI('تماس ورودی از طرف مخاطب...');
+                answerBtn.classList.remove('hidden');
+                callAvatar.classList.add('pulse-animation');
+            });
+
+            peer.on('error', (err) => {
+                if(err.type === 'unavailable-id') {
+                    // اگر آیدی قبلا گرفته شده بود (مثلا دو تب همزمان)
+                    alert('این آیدی در دستگاه دیگری فعال است.');
+                } else {
+                    alert('خطا در ارتباط: ' + err.type);
+                }
+                resetUI();
+            });
+        }
+
+        // دسترسی به میکروفون
+        async function getMicStream() {
+            try {
+                return await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            } catch (err) {
+                alert('لطفا مجوز دسترسی به میکروفون را صادر کنید.');
+                throw err;
+            }
+        }
+
+        // شروع تماس (خروجی)
+        document.getElementById('call-btn').addEventListener('click', async () => {
+            const targetId = peerIdInput.value.trim().toLowerCase();
+            
+            if (!targetId) {
+                alert('لطفا آیدی مخاطب را وارد کنید.');
+                return;
+            }
+            if (targetId === myUserId) {
+                alert('نمی‌توانید با آیدی خودتان تماس بگیرید!');
+                return;
+            }
+
+            try {
+                localStream = await getMicStream();
+                showCallUI('در حال زنگ زدن...');
+                callAvatar.classList.add('pulse-animation');
+
+                activeCall = peer.call(targetId, localStream);
+                handleCallEvents(activeCall);
+            } catch (e) {
+                resetUI();
+            }
+        });
+
+        // پاسخ به تماس ورودی
+        answerBtn.addEventListener('click', async () => {
+            try {
+                localStream = await getMicStream();
+                activeCall.answer(localStream);
+                answerBtn.classList.add('hidden');
+                callStatus.innerText = 'تماس برقرار شد';
+                handleCallEvents(activeCall);
+            } catch (e) {
+                resetUI();
+            }
+        });
+
+        // مدیریت رویدادهای تماس
+        function handleCallEvents(call) {
+            call.on('stream', (remoteStream) => {
+                callAvatar.classList.remove('pulse-animation');
+                callStatus.innerText = 'در حال گفتگو...';
+                remoteAudio.srcObject = remoteStream;
+            });
+
+            call.on('close', () => {
+                resetUI();
+            });
+
+            call.on('error', () => {
+                resetUI();
+            });
+        }
+
+        // قطع تماس
+        document.getElementById('hangup-btn').addEventListener('click', () => {
+            if (activeCall) {
+                activeCall.close();
+            }
+            resetUI();
+        });
+
+        // تغییر UI به حالت تماس
+        function showCallUI(statusText) {
+            dialSection.classList.add('hidden');
+            activeCallSection.classList.remove('hidden');
+            callStatus.innerText = statusText;
+        }
+
+        // ریست کردن UI به حالت اولیه
+        function resetUI() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+            activeCall = null;
+            callAvatar.classList.remove('pulse-animation');
+            answerBtn.classList.add('hidden');
+            activeCallSection.classList.add('hidden');
+            dialSection.classList.remove('hidden');
+        }
+
+        // شروع اولیه
+        initPeer();
+    </script>
+</body>
+</html>
